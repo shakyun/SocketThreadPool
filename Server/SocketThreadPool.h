@@ -43,13 +43,7 @@ public:
 	bool isResourceSatisfy();
 	TaskResource* task();
 public:
-	int getThreadNum();
-	int getEpfd();
-	int getTcpServer();
 	int getListenPort();
-	pthread_cond_t& getConnCondition();
-	std::list<int>& getTcpSockets();
-	void setListenPort(int port);
 private:
 	void createThread();
 	void createServer();
@@ -66,12 +60,10 @@ private:
 	pthread_t           socketThread_;          //监听连接线程，填充连接池
 
 	std::deque<Task>    taskQueue_;             //任务队列
-	std::vector<int>    tcpServers_;            //监听队列
 	int                 tcpServer_;
 	int                 listenPort_;
 	std::list<int>      tcpSockets_;            //连接池
 	pthread_mutex_t     mutex_;
 	pthread_cond_t      condition_;
-	pthread_cond_t      connCondition_;         //连接池锁
 };
 

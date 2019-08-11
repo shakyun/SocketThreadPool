@@ -106,8 +106,8 @@ TaskResource* ThreadPool::task()
 
 	taskres->task = task;
 	taskres->socket = socket;
-	printf("连接池空闲连接:%d\n", tcpSockets_.size());
-	printf("任务池等待任务:%d\n", taskQueue_.size());
+	//printf("连接池空闲连接:%d\n", tcpSockets_.size());
+	//printf("任务池等待任务:%d\n", taskQueue_.size());
 
 	pthread_mutex_unlock(&mutex_);
 	return taskres;
@@ -160,7 +160,7 @@ void ThreadPool::createServer()
 	}
 	//获取监听的端口
 	getsockname(tcpServer_, (struct sockaddr*)&addr, &addrLen);
-	setListenPort(ntohs(addr.sin_port));
+	listenPort_ = ntohs(addr.sin_port);
 	// 3. 监听
 	ret = listen(tcpServer_, 100);
 	if (ret == -1)
@@ -224,19 +224,19 @@ void* ThreadPool::socketThreadFunc(void * arg)
 {
 	ThreadPool* pool = static_cast<ThreadPool*>(arg);
 	struct epoll_event ev;
-	struct epoll_event events[pool->getThreadNum()];
+	struct epoll_event events[pool->threadNum_];
 	// 开始检测
 	while (1)
 	{
-		int nums = epoll_wait(pool->getEpfd(), events, sizeof(events) / sizeof(events[0]), -1);
-		printf("numbers = %d\n", nums);
+		int nums = epoll_wait(pool->epfd_, events, sizeof(events) / sizeof(events[0]), -1);
+		//printf("numbers = %d\n", nums);
 
 		// 遍历状态变化的文件描述符集合
 		for (int i = 0; i < nums; ++i)
 		{
 			int curfd = events[i].data.fd;
 			// 有新连接
-			if (pool->getTcpServer() == curfd)
+			if (pool->tcpServer_ == curfd)
 			{
 				struct sockaddr_in clisock;
 				socklen_t len = sizeof(clisock);
@@ -250,14 +250,13 @@ void* ThreadPool::socketThreadFunc(void * arg)
 				//ev.events = EPOLLIN | EPOLLOUT;
 				ev.events = EPOLLIN;
 				ev.data.fd = connfd;
-				epoll_ctl(pool->getEpfd(), EPOLL_CTL_ADD, connfd, &ev);
+				epoll_ctl(pool->epfd_, EPOLL_CTL_ADD, connfd, &ev);
 				//加入连接池
 				pthread_mutex_lock(&pool->mutex_);
-				pool->getTcpSockets().push_back(connfd);
+				pool->tcpSockets_.push_back(connfd);
 				pthread_mutex_unlock(&pool->mutex_);
 				if (pool->isResourceSatisfy())
 					pthread_cond_signal(&pool->condition_);
-				//pthread_cond_signal(&pool->getConnCondition());
 			}
 			else
 			{
@@ -273,7 +272,7 @@ void* ThreadPool::socketThreadFunc(void * arg)
 					printf("client disconnect ...\n");
 					close(curfd);
 					// 从树上删除该节点
-					epoll_ctl(pool->getEpfd(), EPOLL_CTL_DEL, curfd, NULL);
+					epoll_ctl(pool->epfd_, EPOLL_CTL_DEL, curfd, NULL);
 				}
 				else if (count == -1)
 				{
@@ -287,7 +286,7 @@ void* ThreadPool::socketThreadFunc(void * arg)
 				}
 			}
 		}
-		printf("连接池空闲连接:%d\n", pool->getTcpSockets().size());
+		//printf("连接池空闲连接:%d\n", pool->tcpSockets_.size());
 	}
 }
 
@@ -310,66 +309,6 @@ ThreadPool::ThreadPool(const ThreadPool&)
 }
 
 /**
- * @brief 获取threadNum_
- *
- * @return int
- */
-int ThreadPool::getThreadNum()
-{
-	return threadNum_;
-}
-
-/**
- * @brief 获取epfd_
- *
- * @return int
- */
-int ThreadPool::getEpfd()
-{
-	return epfd_;
-}
-
-/**
- * @brief 设置监听端口
- *
- * @param port
- */
-void ThreadPool::setListenPort(int port)
-{
-	listenPort_ = port;
-}
-
-/**
- * @brief 获取tcpServer_
- *
- * @return int
- */
-int ThreadPool::getTcpServer()
-{
-	return tcpServer_;
-}
-
-/**
- * @brief 获取tcpSocket_
- *
- * @return std::list<int>&
- */
-std::list<int>& ThreadPool::getTcpSockets()
-{
-	return tcpSockets_;
-}
-
-/**
- * @brief 获取condition_
- *
- * @return pthread_cond_t&
- */
-pthread_cond_t& ThreadPool::getConnCondition()
-{
-	return connCondition_;
-}
-
-/**
  * @brief 获取listenPort
  *
  * @return int
@@ -378,7 +317,6 @@ int ThreadPool::getListenPort()
 {
 	return listenPort_;
 }
-
 
 /**
 *@brief  检查资源是否全部满足
